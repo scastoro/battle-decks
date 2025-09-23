@@ -1,4 +1,6 @@
+import { DurableObject } from "cloudflare:workers";
 import {
+  Env,
   GameState,
   GamePhase,
   VoteChoice,
@@ -7,20 +9,20 @@ import {
   WebSocketMessage,
   AdjacencyRecord,
   GameRecord,
-  ConnectionMetadata
+  ConnectionMetadata,
+  SqlRow,
+  isGameRecord,
+  isAdjacencyRecord
 } from './types/index';
 
-export class GameSession {
+export class GameSession extends DurableObject<Env> {
   private sql: SqlStorage;
-  private ctx: DurableObjectState;
-  private env: Env;
 
   // In-memory game state (rebuilt from SQLite on hibernation wake-up)
   private gameState: GameState | null = null;
 
   constructor(ctx: DurableObjectState, env: Env) {
-    this.ctx = ctx;
-    this.env = env;
+    super(ctx, env); // Required for RPC support
     this.sql = ctx.storage.sql;
 
     // Initialize SQLite tables
@@ -272,9 +274,13 @@ export class GameSession {
     server.serializeAttachment(metadata);
 
     // Set up auto-response for ping/pong (avoids waking hibernating DO)
-    const pingRequest = new Request('ws://ping');
-    const pongResponse = new Response('pong');
-    this.ctx.setWebSocketAutoResponse(pingRequest, pongResponse);
+    try {
+      const autoResponse = new WebSocketRequestResponsePair('ping', 'pong');
+      this.ctx.setWebSocketAutoResponse(autoResponse);
+    } catch (error) {
+      // WebSocketRequestResponsePair might not be available in all environments
+      console.log('WebSocket auto-response not available:', error);
+    }
 
     // Send current game state to new client
     await this.ensureGameStateLoaded();
@@ -386,9 +392,9 @@ export class GameSession {
   private async loadGameState(): Promise<void> {
     const result = this.sql.exec(
       'SELECT * FROM game_session ORDER BY updated_at DESC LIMIT 1'
-    ).one() as GameRecord | null;
+    ).one() as SqlRow | null;
 
-    if (result) {
+    if (result && isGameRecord(result)) {
       this.gameState = {
         sessionId: result.session_id,
         currentSlide: result.current_slide,
@@ -450,16 +456,16 @@ export class GameSession {
   private getNextSlide(choice: VoteChoice): string | null {
     if (!this.gameState) return null;
 
-    const adjacency = this.sql.exec(
+    const result = this.sql.exec(
       'SELECT * FROM adjacency WHERE slide_id = ?',
       this.gameState.currentSlide
-    ).one() as AdjacencyRecord | null;
+    ).one() as SqlRow | null;
 
-    if (!adjacency) return null;
+    if (!result || !isAdjacencyRecord(result)) return null;
 
     const options = choice === 'logical'
-      ? JSON.parse(adjacency.logical_slides)
-      : JSON.parse(adjacency.chaotic_slides);
+      ? JSON.parse(result.logical_slides)
+      : JSON.parse(result.chaotic_slides);
 
     // Find first unused slide
     for (const slideId of options) {

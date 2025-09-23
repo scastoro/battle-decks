@@ -2,6 +2,13 @@
 export type GamePhase = 'waiting' | 'presenting' | 'voting' | 'finished';
 export type VoteChoice = 'logical' | 'chaotic';
 
+// Cloudflare Environment bindings (will be overridden by worker-configuration.d.ts)
+export interface Env {
+  GAME_SESSION: DurableObjectNamespace;
+  SLIDES: R2Bucket;
+  AI: Ai;
+}
+
 // Slide data structure
 export interface SlideData {
   id: string;
@@ -67,7 +74,8 @@ export type WebSocketMessageType =
   | 'voteUpdate'
   | 'slideChange'
   | 'timerUpdate'
-  | 'error';
+  | 'error'
+  | 'pong';
 
 export interface WebSocketMessage {
   type: WebSocketMessageType;
@@ -75,22 +83,45 @@ export interface WebSocketMessage {
   timestamp: number;
 }
 
+// SQL storage types (must align with SqlStorageValue)
+export interface SqlRow {
+  [key: string]: ArrayBuffer | string | number | null;
+}
+
 // SQLite schema types for type safety
-export interface AdjacencyRecord {
+export interface AdjacencyRecord extends SqlRow {
   slide_id: string;
   logical_slides: string; // JSON string
   chaotic_slides: string; // JSON string
 }
 
-export interface GameRecord {
+export interface GameRecord extends SqlRow {
   session_id: string;
   current_slide: string;
   used_slides: string; // JSON string
-  phase: GamePhase;
+  phase: string; // Will be cast to GamePhase
   slide_count: number;
   max_slides: number;
   created_at: number;
   updated_at: number;
+}
+
+// Type guards for SQL results
+export function isGameRecord(row: SqlRow): row is GameRecord {
+  return typeof row === 'object' && row !== null &&
+    typeof row.session_id === 'string' &&
+    typeof row.current_slide === 'string' &&
+    typeof row.used_slides === 'string' &&
+    typeof row.phase === 'string' &&
+    typeof row.slide_count === 'number' &&
+    typeof row.max_slides === 'number';
+}
+
+export function isAdjacencyRecord(row: SqlRow): row is AdjacencyRecord {
+  return typeof row === 'object' && row !== null &&
+    typeof row.slide_id === 'string' &&
+    typeof row.logical_slides === 'string' &&
+    typeof row.chaotic_slides === 'string';
 }
 
 // WebSocket connection metadata (attached to WebSocket for hibernation)

@@ -1,4 +1,4 @@
-import { VoteRequest, StartGameRequest } from './types/index';
+import { Env, VoteRequest, StartGameRequest } from './types/index';
 import { GameSession } from './game-session';
 
 // Export the Durable Object class for Cloudflare
@@ -72,7 +72,7 @@ async function handleSessionRequest(
 ): Promise<Response> {
   // Get the Durable Object instance using the session ID as the name
   const id = env.GAME_SESSION.idFromName(sessionId);
-  const stub = env.GAME_SESSION.get(id);
+  const stub = env.GAME_SESSION.get(id) as DurableObjectStub<GameSession>;
 
   switch (action) {
     case 'vote':
@@ -129,7 +129,7 @@ async function createGameSession(request: Request, env: Env): Promise<Response> 
 
   // Get the Durable Object instance using the room code as the name
   const id = env.GAME_SESSION.idFromName(roomCode);
-  const stub = env.GAME_SESSION.get(id);
+  const stub = env.GAME_SESSION.get(id) as DurableObjectStub<GameSession>;
 
   // Initialize the session
   await stub.initialize();
