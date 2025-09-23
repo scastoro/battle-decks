@@ -1,0 +1,25 @@
+name = "battle-decks"
+main = "src/index.ts"
+compatibility_date = "2025-09-23"
+
+# SQLite-backed Durable Objects (2025 best practice)
+[[durable_objects.bindings]]
+name = "GAME_SESSION"
+class_name = "GameSession"
+
+# Use new_sqlite_classes for SQLite backend (GA in 2025)
+[[migrations]]
+tag = "v1"
+new_sqlite_classes = ["GameSession"]
+
+# R2 bucket for slide storage
+[[r2_buckets]]
+binding = "SLIDES"
+bucket_name = "battle-decks-slides"
+
+# Workers AI binding for embeddings
+[ai]
+binding = "AI"
+
+# Optional: Node.js compatibility if needed
+# compatibility_flags = ["nodejs_compat"]

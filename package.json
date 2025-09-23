@@ -1,0 +1,27 @@
+{
+  "name": "battle-decks",
+  "version": "1.0.0",
+  "description": "Live presentation game built on Cloudflare Workers with real-time audience voting",
+  "main": "src/index.ts",
+  "scripts": {
+    "dev": "wrangler dev",
+    "deploy": "wrangler deploy",
+    "types": "wrangler types",
+    "tail": "wrangler tail"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scastoro/battle-decks.git"
+  },
+  "keywords": ["cloudflare", "workers", "durable-objects", "websockets", "presentations"],
+  "author": "",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/scastoro/battle-decks/issues"
+  },
+  "homepage": "https://github.com/scastoro/battle-decks#readme",
+  "devDependencies": {
+    "typescript": "^5.9.2",
+    "wrangler": "^4.38.0"
+  }
+}
