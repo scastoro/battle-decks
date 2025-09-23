@@ -17,9 +17,33 @@ new_sqlite_classes = ["GameSession"]
 binding = "SLIDES"
 bucket_name = "battle-decks-slides"
 
+# KV namespace for deck metadata
+[[kv_namespaces]]
+binding = "DECKS"
+id = "6a330a42e7b94f3ab1d3822fb8f26249"
+
 # Workers AI binding for embeddings
 [ai]
 binding = "AI"
 
 # Optional: Node.js compatibility if needed
 # compatibility_flags = ["nodejs_compat"]
+
+# Staging environment
+[env.staging]
+name = "battle-decks-staging"
+
+[[env.staging.kv_namespaces]]
+binding = "DECKS"
+id = "4d165302f20042d18ab2fc51824403b3"
+
+[[env.staging.r2_buckets]]
+binding = "SLIDES"
+bucket_name = "battle-decks-slides-staging"
+
+[[env.staging.durable_objects.bindings]]
+name = "GAME_SESSION"
+class_name = "GameSession"
+
+[env.staging.ai]
+binding = "AI"
