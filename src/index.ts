@@ -95,7 +95,7 @@ async function handleSessionRequest(
       return await stub.getStatus();
 
     case 'ws':
-      // WebSocket upgrade
+      // WebSocket upgrade - handle in Worker, not via RPC
       const upgradeHeader = request.headers.get('Upgrade');
       if (upgradeHeader !== 'websocket') {
         return new Response('Expected Upgrade: websocket', {
@@ -103,7 +103,24 @@ async function handleSessionRequest(
           headers: getCorsHeaders()
         });
       }
-      return await stub.handleWebSocket(request);
+
+      // Create WebSocket pair in Worker
+      const webSocketPair = new WebSocketPair();
+      const [client, server] = Object.values(webSocketPair);
+
+      // Pass server socket to Durable Object via fetch (not RPC)
+      await stub.fetch(request.url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'accept-websocket' }),
+        webSocket: server
+      });
+
+      // Return client socket directly from Worker
+      return new Response(null, {
+        status: 101,
+        webSocket: client
+      } as ResponseInit & { webSocket: WebSocket });
 
     case 'start':
       if (request.method !== 'POST') {
@@ -131,8 +148,8 @@ async function createGameSession(request: Request, env: Env): Promise<Response> 
   const id = env.GAME_SESSION.idFromName(roomCode);
   const stub = env.GAME_SESSION.get(id) as DurableObjectStub<GameSession>;
 
-  // Initialize the session
-  await stub.initialize();
+  // Initialize the session with room code
+  await stub.initialize(roomCode);
 
   return new Response(JSON.stringify({
     sessionId: roomCode,

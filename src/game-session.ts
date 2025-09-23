@@ -21,12 +21,18 @@ export class GameSession extends DurableObject<Env> {
   // In-memory game state (rebuilt from SQLite on hibernation wake-up)
   private gameState: GameState | null = null;
 
+  // Store room code for consistent session lookup
+  private roomCode: string | null = null;
+
   constructor(ctx: DurableObjectState, env: Env) {
     super(ctx, env); // Required for RPC support
     this.sql = ctx.storage.sql;
 
-    // Initialize SQLite tables
-    this.initializeTables();
+    // Initialize SQLite tables and recover room code (CRITICAL: prevents race conditions)
+    this.ctx.blockConcurrencyWhile(async () => {
+      this.initializeTables();
+      await this.recoverRoomCodeFromStorage();
+    });
   }
 
   private initializeTables(): void {
@@ -50,6 +56,15 @@ export class GameSession extends DurableObject<Env> {
         max_slides INTEGER NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
+      )
+    `);
+
+    // Table for DO metadata persistence (CRITICAL: solves alarm handler issue)
+    this.sql.exec(`
+      CREATE TABLE IF NOT EXISTS do_metadata (
+        key TEXT PRIMARY KEY,
+        value TEXT NOT NULL,
+        created_at INTEGER NOT NULL
       )
     `);
 
@@ -132,9 +147,49 @@ export class GameSession extends DurableObject<Env> {
     }
   }
 
+  // Fetch method to handle HTTP requests (including WebSocket acceptance)
+  async fetch(request: Request): Promise<Response> {
+    // Handle WebSocket acceptance from Worker
+    if (request.method === 'POST') {
+      try {
+        const body = await request.json() as { action: string };
+        if (body.action === 'accept-websocket') {
+          // Get the WebSocket from the request
+          const webSocket = (request as any).webSocket;
+          if (webSocket) {
+            // Accept the WebSocket in the Durable Object
+            this.ctx.acceptWebSocket(webSocket);
+
+            // Send current game state to new client
+            await this.ensureGameStateLoaded();
+            if (this.gameState) {
+              this.sendToSocket(webSocket, {
+                type: 'gameState',
+                data: this.getPublicGameState(),
+                timestamp: Date.now()
+              });
+            }
+
+            return new Response('WebSocket accepted', { status: 200 });
+          }
+        }
+      } catch (error) {
+        console.error('Error handling WebSocket acceptance:', error);
+      }
+    }
+
+    return new Response('Not found', { status: 404 });
+  }
+
   // RPC method: Initialize a new game session
-  async initialize(): Promise<Response> {
-    const sessionId = this.ctx.id.toString();
+  async initialize(roomCode?: string): Promise<Response> {
+    const sessionId = roomCode || this.ctx.id.toString();
+    this.roomCode = roomCode || null;
+
+    // CRITICAL: Store room code persistently for alarm handler recovery
+    if (roomCode) {
+      await this.storeRoomCode(roomCode);
+    }
 
     this.gameState = {
       sessionId,
@@ -294,8 +349,8 @@ export class GameSession extends DurableObject<Env> {
 
     return new Response(null, {
       status: 101,
-      webSocket: client,
-    });
+      webSocket: client
+    } as ResponseInit & { webSocket: WebSocket });
   }
 
   // WebSocket message handler (called when DO wakes from hibernation)
@@ -350,16 +405,62 @@ export class GameSession extends DurableObject<Env> {
 
   // Alarm handler for game timers
   async alarm(): Promise<void> {
-    await this.ensureGameStateLoaded();
-    if (!this.gameState) return;
+    try {
+      console.log('🔔 Alarm handler triggered, checking room code...');
 
-    if (this.gameState.phase === 'presenting') {
-      // Switch to voting phase
-      this.gameState.phase = 'voting';
-      this.startVotingTimer();
-    } else if (this.gameState.phase === 'voting') {
-      // Process votes and move to next slide
-      await this.processVotesAndAdvance();
+      // SOLUTION: Ensure room code is recovered after DO restart
+      if (!this.roomCode) {
+        await this.recoverRoomCodeFromStorage();
+      }
+
+      console.log(`🔔 Room code status: ${this.roomCode ? `Found: ${this.roomCode}` : 'Not found, using DO ID'}`);
+
+      await this.ensureGameStateLoaded();
+      if (!this.gameState) {
+        console.error('❌ Alarm handler: No game state found, cannot proceed');
+        return;
+      }
+
+      console.log(`🔔 Processing alarm for session ${this.gameState.sessionId}, phase: ${this.gameState.phase}`);
+
+      if (this.gameState.phase === 'presenting') {
+        // Switch to voting phase
+        this.gameState.phase = 'voting';
+        await this.saveGameState(); // CRITICAL: Save state changes to database
+        await this.startVotingTimer();
+      } else if (this.gameState.phase === 'voting') {
+        // Process votes and move to next slide
+        await this.processVotesAndAdvance();
+      }
+    } catch (error) {
+      console.error('❌ Critical error in alarm handler:', error);
+      // Don't throw - let the alarm retry with exponential backoff
+    }
+  }
+
+  // SOLUTION: Store room code persistently for alarm handler recovery
+  private async storeRoomCode(roomCode: string): Promise<void> {
+    this.sql.exec(
+      'INSERT OR REPLACE INTO do_metadata (key, value, created_at) VALUES (?, ?, ?)',
+      'room_code',
+      roomCode,
+      Date.now()
+    );
+  }
+
+  // SOLUTION: Recover room code from storage after DO restart
+  private async recoverRoomCodeFromStorage(): Promise<void> {
+    try {
+      const result = this.sql.exec('SELECT value FROM do_metadata WHERE key = ?', 'room_code').one() as { value: string } | null;
+      if (result) {
+        this.roomCode = result.value;
+        console.log(`✅ Recovered room code: ${this.roomCode} after DO restart`);
+      } else {
+        console.log('ℹ️ No stored room code found (expected for new DO)');
+      }
+    } catch (error) {
+      // This is expected for new DOs or DOs created before this fix
+      console.log('ℹ️ No room code metadata table found (expected for new/legacy DO)', error);
     }
   }
 
@@ -390,11 +491,31 @@ export class GameSession extends DurableObject<Env> {
   }
 
   private async loadGameState(): Promise<void> {
-    const result = this.sql.exec(
-      'SELECT * FROM game_session ORDER BY updated_at DESC LIMIT 1'
-    ).one() as SqlRow | null;
+    try {
+      // CRITICAL FIX: Use recovered room code or fallback to DO ID
+      let sessionId = this.roomCode;
+
+      // If no room code, try to recover it first
+      if (!sessionId) {
+        await this.recoverRoomCodeFromStorage();
+        sessionId = this.roomCode;
+      }
+
+      // Final fallback to DO ID (for backwards compatibility)
+      sessionId = sessionId || this.ctx.id.toString();
+
+      const result = this.sql.exec(
+        'SELECT * FROM game_session WHERE session_id = ? LIMIT 1',
+        sessionId
+      ).one() as SqlRow | null;
 
     if (result && isGameRecord(result)) {
+      // Restore room code for future lookups (ensure consistency)
+      if (!this.roomCode && result.session_id !== this.ctx.id.toString()) {
+        this.roomCode = result.session_id;
+        await this.storeRoomCode(result.session_id); // Persist for future recovery
+      }
+
       this.gameState = {
         sessionId: result.session_id,
         currentSlide: result.current_slide,
@@ -408,16 +529,22 @@ export class GameSession extends DurableObject<Env> {
         maxSlides: result.max_slides
       };
     }
+    } catch (error) {
+      // If there's an error loading game state (e.g., no session found),
+      // gameState will remain null, which is handled by calling methods
+      console.error('Error loading game state:', error);
+    }
   }
 
   private startPresentationTimer(): void {
     this.ctx.storage.setAlarm(Date.now() + 45000);
   }
 
-  private startVotingTimer(): void {
+  private async startVotingTimer(): Promise<void> {
     this.gameState!.votingOpen = true;
     this.gameState!.voters.clear();
     this.gameState!.votes = { logical: 0, chaotic: 0 };
+    await this.saveGameState(); // CRITICAL: Save state changes to database
     this.ctx.storage.setAlarm(Date.now() + 10000);
     this.broadcastGameState();
   }
