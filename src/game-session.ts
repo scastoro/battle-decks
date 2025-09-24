@@ -54,6 +54,7 @@ export class GameSession extends DurableObject<Env> {
         phase TEXT NOT NULL,
         slide_count INTEGER NOT NULL,
         max_slides INTEGER NOT NULL,
+        timer_end INTEGER NOT NULL DEFAULT 0,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       )
@@ -147,37 +148,47 @@ export class GameSession extends DurableObject<Env> {
     }
   }
 
-  // Fetch method to handle HTTP requests (including WebSocket acceptance)
+  // Fetch method to handle HTTP requests including WebSocket upgrades
   async fetch(request: Request): Promise<Response> {
-    // Handle WebSocket acceptance from Worker
-    if (request.method === 'POST') {
-      try {
-        const body = await request.json() as { action: string };
-        if (body.action === 'accept-websocket') {
-          // Get the WebSocket from the request
-          const webSocket = (request as any).webSocket;
-          if (webSocket) {
-            // Accept the WebSocket in the Durable Object
-            this.ctx.acceptWebSocket(webSocket);
+    // Check if this is a WebSocket upgrade request
+    const upgradeHeader = request.headers.get('Upgrade');
 
-            // Send current game state to new client
-            await this.ensureGameStateLoaded();
-            if (this.gameState) {
-              this.sendToSocket(webSocket, {
-                type: 'gameState',
-                data: this.getPublicGameState(),
-                timestamp: Date.now()
-              });
-            }
+    if (upgradeHeader === 'websocket') {
+      // Handle WebSocket upgrade
+      const webSocketPair = new WebSocketPair();
+      const [client, server] = Object.values(webSocketPair);
 
-            return new Response('WebSocket accepted', { status: 200 });
-          }
-        }
-      } catch (error) {
-        console.error('Error handling WebSocket acceptance:', error);
+      // Accept the WebSocket using hibernation API
+      this.ctx.acceptWebSocket(server);
+      console.log(`🔌 WebSocket accepted! Total WebSockets: ${this.ctx.getWebSockets().length}`);
+
+      // Attach metadata to WebSocket for hibernation persistence
+      const metadata: ConnectionMetadata = {
+        joinedAt: Date.now(),
+        lastActivity: Date.now()
+      };
+
+      // Store metadata in a way that survives hibernation
+      server.serializeAttachment(metadata);
+
+      // Send initial game state
+      await this.ensureGameStateLoaded();
+      if (this.gameState) {
+        console.log(`📤 Sending initial game state to new WebSocket client`);
+        this.sendToSocket(server, {
+          type: 'gameState',
+          data: this.getPublicGameState(),
+          timestamp: Date.now()
+        });
       }
+
+      return new Response(null, {
+        status: 101,
+        webSocket: client
+      } as ResponseInit & { webSocket: WebSocket });
     }
 
+    // Non-WebSocket requests
     return new Response('Not found', { status: 404 });
   }
 
@@ -311,47 +322,6 @@ export class GameSession extends DurableObject<Env> {
     });
   }
 
-  // Handle WebSocket connections with Hibernation API
-  async handleWebSocket(request: Request): Promise<Response> {
-    const webSocketPair = new WebSocketPair();
-    const [client, server] = Object.values(webSocketPair);
-
-    // Use WebSocket Hibernation API (2025 best practice)
-    this.ctx.acceptWebSocket(server);
-
-    // Attach metadata to WebSocket for hibernation persistence
-    const metadata: ConnectionMetadata = {
-      joinedAt: Date.now(),
-      lastActivity: Date.now()
-    };
-
-    // Store metadata in a way that survives hibernation
-    server.serializeAttachment(metadata);
-
-    // Set up auto-response for ping/pong (avoids waking hibernating DO)
-    try {
-      const autoResponse = new WebSocketRequestResponsePair('ping', 'pong');
-      this.ctx.setWebSocketAutoResponse(autoResponse);
-    } catch (error) {
-      // WebSocketRequestResponsePair might not be available in all environments
-      console.log('WebSocket auto-response not available:', error);
-    }
-
-    // Send current game state to new client
-    await this.ensureGameStateLoaded();
-    if (this.gameState) {
-      this.sendToSocket(server, {
-        type: 'gameState',
-        data: this.getPublicGameState(),
-        timestamp: Date.now()
-      });
-    }
-
-    return new Response(null, {
-      status: 101,
-      webSocket: client
-    } as ResponseInit & { webSocket: WebSocket });
-  }
 
   // WebSocket message handler (called when DO wakes from hibernation)
   async webSocketMessage(ws: WebSocket, message: string): Promise<void> {
@@ -424,10 +394,20 @@ export class GameSession extends DurableObject<Env> {
       console.log(`🔔 Processing alarm for session ${this.gameState.sessionId}, phase: ${this.gameState.phase}`);
 
       if (this.gameState.phase === 'presenting') {
-        // Switch to voting phase
-        this.gameState.phase = 'voting';
-        await this.saveGameState(); // CRITICAL: Save state changes to database
-        await this.startVotingTimer();
+        // Check if this is the final slide
+        if (this.gameState.slideCount >= this.gameState.maxSlides) {
+          // Game is complete - skip voting and go directly to finished
+          console.log(`🏁 Game complete! Final slide ${this.gameState.slideCount}/${this.gameState.maxSlides} - skipping voting`);
+          this.gameState.phase = 'finished';
+          this.gameState.timeRemaining = 0;
+          await this.saveGameState();
+          await this.broadcastGameState();
+        } else {
+          // Switch to voting phase
+          this.gameState.phase = 'voting';
+          await this.saveGameState(); // CRITICAL: Save state changes to database
+          await this.startVotingTimer();
+        }
       } else if (this.gameState.phase === 'voting') {
         // Process votes and move to next slide
         await this.processVotesAndAdvance();
@@ -476,8 +456,8 @@ export class GameSession extends DurableObject<Env> {
 
     this.sql.exec(`
       INSERT OR REPLACE INTO game_session
-      (session_id, current_slide, used_slides, phase, slide_count, max_slides, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+      (session_id, current_slide, used_slides, phase, slide_count, max_slides, timer_end, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
     `,
       this.gameState.sessionId,
       this.gameState.currentSlide,
@@ -485,6 +465,7 @@ export class GameSession extends DurableObject<Env> {
       this.gameState.phase,
       this.gameState.slideCount,
       this.gameState.maxSlides,
+      this.gameState.timerEnd,
       Date.now(),
       Date.now()
     );
@@ -524,7 +505,7 @@ export class GameSession extends DurableObject<Env> {
         votes: { logical: 0, chaotic: 0 },
         voters: new Set(),
         votingOpen: false,
-        timerEnd: 0,
+        timerEnd: result.timer_end,
         slideCount: result.slide_count,
         maxSlides: result.max_slides
       };
@@ -544,6 +525,7 @@ export class GameSession extends DurableObject<Env> {
     this.gameState!.votingOpen = true;
     this.gameState!.voters.clear();
     this.gameState!.votes = { logical: 0, chaotic: 0 };
+    this.gameState!.timerEnd = Date.now() + 10000; // 10 seconds for voting
     await this.saveGameState(); // CRITICAL: Save state changes to database
     this.ctx.storage.setAlarm(Date.now() + 10000);
     this.broadcastGameState();
@@ -577,6 +559,7 @@ export class GameSession extends DurableObject<Env> {
 
     await this.saveGameState();
     this.startPresentationTimer();
+    this.broadcastGameState(); // Ensure all clients get updated phase and slide info
     this.broadcastSlideChange(nextSlide);
   }
 
@@ -645,13 +628,17 @@ export class GameSession extends DurableObject<Env> {
 
   private broadcast(message: WebSocketMessage): void {
     const messageStr = JSON.stringify(message);
+    const webSockets = this.ctx.getWebSockets();
+
+    console.log(`📡 Broadcasting ${message.type} to ${webSockets.length} WebSocket(s)`);
 
     // Get all hibernatable WebSockets
-    this.ctx.getWebSockets().forEach(ws => {
+    webSockets.forEach((ws, index) => {
       try {
         ws.send(messageStr);
+        console.log(`✅ Sent ${message.type} to WebSocket ${index + 1}`);
       } catch (error) {
-        console.error('Error broadcasting to socket:', error);
+        console.error(`❌ Error broadcasting ${message.type} to WebSocket ${index + 1}:`, error);
       }
     });
   }
