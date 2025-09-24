@@ -2,6 +2,11 @@ name = "battle-decks"
 main = "src/index.ts"
 compatibility_date = "2025-09-23"
 
+# Static assets configuration for frontend
+[assets]
+directory = "public"
+binding = "ASSETS"
+
 # SQLite-backed Durable Objects (2025 best practice)
 [[durable_objects.bindings]]
 name = "GAME_SESSION"

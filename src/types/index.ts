@@ -7,6 +7,7 @@ export interface Env {
   GAME_SESSION: DurableObjectNamespace;
   SLIDES: R2Bucket;
   AI: Ai;
+  ASSETS: Fetcher;
 }
 
 // Slide data structure
@@ -102,6 +103,7 @@ export interface GameRecord extends SqlRow {
   phase: string; // Will be cast to GamePhase
   slide_count: number;
   max_slides: number;
+  timer_end: number;
   created_at: number;
   updated_at: number;
 }
@@ -114,7 +116,8 @@ export function isGameRecord(row: SqlRow): row is GameRecord {
     typeof row.used_slides === 'string' &&
     typeof row.phase === 'string' &&
     typeof row.slide_count === 'number' &&
-    typeof row.max_slides === 'number';
+    typeof row.max_slides === 'number' &&
+    typeof row.timer_end === 'number';
 }
 
 export function isAdjacencyRecord(row: SqlRow): row is AdjacencyRecord {
