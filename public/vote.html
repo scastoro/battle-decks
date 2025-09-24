@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Battle Decks - Vote</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .vote-container {
+            width: 100%;
+            max-width: 400px;
+            padding: 20px;
+        }
+
+        .join-panel {
+            text-align: center;
+        }
+
+        .join-panel h1 {
+            color: white;
+            margin-bottom: 8px;
+        }
+
+        .join-panel p {
+            color: rgba(255, 255, 255, 0.8);
+            margin-bottom: 32px;
+        }
+
+        .room-input-group {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+        }
+
+        .room-input {
+            flex: 1;
+            text-align: center;
+            text-transform: uppercase;
+            font-weight: 600;
+            font-size: 18px;
+            letter-spacing: 2px;
+        }
+
+        .voting-panel {
+            text-align: center;
+        }
+
+        .current-slide-info {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 12px;
+            padding: 20px;
+            margin-bottom: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .slide-display {
+            font-size: 18px;
+            color: white;
+            margin-bottom: 8px;
+        }
+
+        .vote-timer {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .vote-buttons-container {
+            margin: 24px 0;
+        }
+
+        .vote-buttons {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 16px;
+            margin-bottom: 20px;
+        }
+
+        .vote-btn {
+            padding: 20px;
+            font-size: 18px;
+            font-weight: 700;
+            border-radius: 16px;
+            border: 3px solid transparent;
+            transition: all 0.3s ease;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            position: relative;
+            overflow: hidden;
+        }
+
+        .vote-btn:before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+            transition: left 0.5s;
+        }
+
+        .vote-btn:hover:before {
+            left: 100%;
+        }
+
+        .vote-btn-logical {
+            background: linear-gradient(135deg, #10b981, #059669);
+            color: white;
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.3);
+        }
+
+        .vote-btn-logical:hover:not(:disabled) {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 30px rgba(16, 185, 129, 0.4);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .vote-btn-chaotic {
+            background: linear-gradient(135deg, #ef4444, #dc2626);
+            color: white;
+            box-shadow: 0 8px 20px rgba(239, 68, 68, 0.3);
+        }
+
+        .vote-btn-chaotic:hover:not(:disabled) {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 30px rgba(239, 68, 68, 0.4);
+            border-color: rgba(255, 255, 255, 0.3);
+        }
+
+        .vote-btn:disabled {
+            opacity: 0.6;
+            transform: none !important;
+            cursor: not-allowed;
+        }
+
+        .vote-status {
+            margin: 20px 0;
+            padding: 16px;
+            border-radius: 12px;
+            font-weight: 600;
+            text-align: center;
+        }
+
+        .vote-status.success {
+            background: rgba(16, 185, 129, 0.2);
+            color: white;
+            border: 1px solid rgba(16, 185, 129, 0.3);
+        }
+
+        .vote-status.error {
+            background: rgba(239, 68, 68, 0.2);
+            color: white;
+            border: 1px solid rgba(239, 68, 68, 0.3);
+        }
+
+        .vote-status.info {
+            background: rgba(59, 130, 246, 0.2);
+            color: white;
+            border: 1px solid rgba(59, 130, 246, 0.3);
+        }
+
+        .vote-counts {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 12px;
+            margin-top: 20px;
+        }
+
+        .vote-count-item {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 12px;
+            border-radius: 8px;
+            text-align: center;
+            backdrop-filter: blur(5px);
+        }
+
+        .vote-count-number {
+            font-size: 24px;
+            font-weight: 700;
+            color: white;
+        }
+
+        .vote-count-label {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.8);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .waiting-message {
+            text-align: center;
+            padding: 40px 20px;
+            color: rgba(255, 255, 255, 0.8);
+        }
+
+        .waiting-message h2 {
+            color: white;
+            margin-bottom: 16px;
+        }
+
+        @media (max-width: 480px) {
+            .vote-container {
+                padding: 16px;
+            }
+
+            .vote-buttons {
+                grid-template-columns: 1fr;
+                gap: 12px;
+            }
+
+            .vote-btn {
+                padding: 16px;
+                font-size: 16px;
+            }
+
+            h1 {
+                font-size: 2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Connection Status -->
+    <div id="connectionStatus" class="connection-status connecting">
+        Connecting...
+    </div>
+
+    <div class="vote-container">
+        <!-- Join Session Panel -->
+        <div id="joinPanel" class="join-panel card-lg">
+            <h1>🗳️ Battle Decks</h1>
+            <p>Join a game session by entering the room code</p>
+
+            <div class="room-input-group">
+                <input type="text"
+                       id="roomCodeInput"
+                       class="input room-input"
+                       placeholder="ABCDEF"
+                       maxlength="6"
+                       autocomplete="off">
+                <button id="joinBtn" class="btn btn-primary btn-lg">
+                    Join Session
+                </button>
+            </div>
+
+            <div id="joinStatus" class="hidden"></div>
+        </div>
+
+        <!-- Voting Panel -->
+        <div id="votingPanel" class="voting-panel hidden">
+            <div class="card-lg">
+                <h2 style="text-align: center; color: white; margin-bottom: 24px;">
+                    🎮 Battle Decks
+                </h2>
+
+                <!-- Current Game Info -->
+                <div class="current-slide-info">
+                    <div class="slide-display">
+                        Session: <span id="currentSessionId">-</span>
+                    </div>
+                    <div class="slide-display">
+                        Slide <span id="currentSlideNumber">1</span> of <span id="maxSlidesDisplay">10</span>
+                    </div>
+                    <div class="vote-timer">
+                        <span id="phaseDisplay">Waiting for game...</span>
+                    </div>
+                </div>
+
+                <!-- Voting Interface -->
+                <div id="votingInterface" class="hidden">
+                    <div class="vote-buttons-container">
+                        <h3 style="color: white; text-align: center; margin-bottom: 16px;">
+                            Vote for the next slide direction:
+                        </h3>
+
+                        <div class="vote-buttons">
+                            <button id="logicalBtn" class="vote-btn vote-btn-logical">
+                                <div style="font-size: 24px; margin-bottom: 8px;">📊</div>
+                                <div>Logical</div>
+                            </button>
+                            <button id="chaoticBtn" class="vote-btn vote-btn-chaotic">
+                                <div style="font-size: 24px; margin-bottom: 8px;">🎲</div>
+                                <div>Chaotic</div>
+                            </button>
+                        </div>
+
+                        <div id="voteStatus" class="hidden"></div>
+                    </div>
+
+                    <!-- Live Vote Counts -->
+                    <div class="vote-counts">
+                        <div class="vote-count-item">
+                            <div class="vote-count-number" id="liveLogicalCount">0</div>
+                            <div class="vote-count-label">📊 Logical</div>
+                        </div>
+                        <div class="vote-count-item">
+                            <div class="vote-count-number" id="liveChaoticCount">0</div>
+                            <div class="vote-count-label">🎲 Chaotic</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Waiting Messages -->
+                <div id="waitingMessage" class="waiting-message">
+                    <h2>⏳ Game Starting Soon</h2>
+                    <p>Please wait for the presenter to start the game...</p>
+                </div>
+
+                <div id="presentingMessage" class="waiting-message hidden">
+                    <h2>🎯 Presentation in Progress</h2>
+                    <p>Listen to the presenter. Voting will open in <span id="presentTimeRemaining">45</span> seconds.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/vote.js"></script>
+</body>
+</html>

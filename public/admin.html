@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Battle Decks - Presenter Controls</title>
+    <link rel="stylesheet" href="/css/styles.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #1e3a8a 0%, #3730a3 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .admin-container {
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+
+        .admin-header {
+            text-align: center;
+            margin-bottom: 32px;
+        }
+
+        .admin-header h1 {
+            color: white;
+            font-size: 2.5rem;
+            margin-bottom: 8px;
+        }
+
+        .admin-header p {
+            color: rgba(255, 255, 255, 0.8);
+            font-size: 18px;
+        }
+
+        .controls-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 24px;
+            margin-bottom: 32px;
+        }
+
+        .control-panel {
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .control-panel h3 {
+            color: white;
+            margin-bottom: 20px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .session-display {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 16px;
+            border-radius: 12px;
+            margin: 16px 0;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+
+        .session-code {
+            font-size: 24px;
+            font-weight: 700;
+            color: white;
+            text-align: center;
+            letter-spacing: 4px;
+            margin-bottom: 8px;
+        }
+
+        .session-url {
+            font-size: 14px;
+            color: rgba(255, 255, 255, 0.7);
+            text-align: center;
+            word-break: break-all;
+        }
+
+        .game-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .control-group {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .control-group label {
+            color: white;
+            font-weight: 600;
+            min-width: 100px;
+        }
+
+        .status-panel {
+            grid-column: 1 / -1;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .status-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .status-item {
+            background: rgba(0, 0, 0, 0.3);
+            padding: 16px;
+            border-radius: 12px;
+            text-align: center;
+        }
+
+        .status-value {
+            font-size: 24px;
+            font-weight: 700;
+            color: white;
+            margin-bottom: 4px;
+        }
+
+        .status-label {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.7);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .quick-actions {
+            grid-column: 1 / -1;
+            background: rgba(255, 255, 255, 0.1);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+        }
+
+        .action-buttons {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 16px;
+        }
+
+        .btn-admin {
+            background: rgba(255, 255, 255, 0.2);
+            color: white;
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            backdrop-filter: blur(5px);
+        }
+
+        .btn-admin:hover:not(:disabled) {
+            background: rgba(255, 255, 255, 0.3);
+            border-color: rgba(255, 255, 255, 0.5);
+            transform: translateY(-2px);
+        }
+
+        .log-panel {
+            grid-column: 1 / -1;
+            background: rgba(0, 0, 0, 0.4);
+            backdrop-filter: blur(10px);
+            border-radius: 16px;
+            padding: 24px;
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            max-height: 300px;
+            overflow-y: auto;
+        }
+
+        .log-entry {
+            padding: 8px 12px;
+            margin-bottom: 8px;
+            border-radius: 8px;
+            font-family: 'Monaco', 'Menlo', monospace;
+            font-size: 14px;
+            background: rgba(255, 255, 255, 0.05);
+            color: rgba(255, 255, 255, 0.9);
+            border-left: 3px solid #10b981;
+        }
+
+        .log-entry.error {
+            border-left-color: #ef4444;
+            background: rgba(239, 68, 68, 0.1);
+        }
+
+        .log-entry.warning {
+            border-left-color: #f59e0b;
+            background: rgba(245, 158, 11, 0.1);
+        }
+
+        .log-timestamp {
+            color: rgba(255, 255, 255, 0.5);
+            font-size: 12px;
+        }
+
+        @media (max-width: 768px) {
+            .controls-grid {
+                grid-template-columns: 1fr;
+            }
+
+            .admin-header h1 {
+                font-size: 2rem;
+            }
+
+            .status-grid {
+                grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            }
+
+            .action-buttons {
+                grid-template-columns: 1fr;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Connection Status -->
+    <div id="connectionStatus" class="connection-status connecting">
+        Connecting...
+    </div>
+
+    <div class="admin-container">
+        <!-- Header -->
+        <div class="admin-header">
+            <h1>⚙️ Battle Decks</h1>
+            <p>Presenter Control Panel</p>
+        </div>
+
+        <div class="controls-grid">
+            <!-- Session Management -->
+            <div class="control-panel">
+                <h3>
+                    <span>🎮</span>
+                    Session Management
+                </h3>
+
+                <div class="game-controls">
+                    <button id="createSessionBtn" class="btn btn-primary btn-lg">
+                        Create New Session
+                    </button>
+
+                    <div id="sessionInfo" class="session-display hidden">
+                        <div class="session-code" id="sessionCode">------</div>
+                        <div class="session-url" id="sessionUrl">
+                            Share this code with your audience
+                        </div>
+                    </div>
+
+                    <div id="sessionStatus" class="hidden"></div>
+                </div>
+            </div>
+
+            <!-- Game Controls -->
+            <div class="control-panel">
+                <h3>
+                    <span>🎯</span>
+                    Game Controls
+                </h3>
+
+                <div class="game-controls">
+                    <div class="control-group">
+                        <label for="maxSlidesInput">Max Slides:</label>
+                        <input type="number"
+                               id="maxSlidesInput"
+                               class="input"
+                               value="10"
+                               min="3"
+                               max="20"
+                               style="width: 80px;">
+                    </div>
+
+                    <button id="startGameBtn" class="btn btn-success btn-lg" disabled>
+                        Start Game
+                    </button>
+
+                    <button id="resetGameBtn" class="btn btn-danger" disabled>
+                        Reset Game
+                    </button>
+
+                    <div id="gameStatus" class="hidden"></div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Game Status -->
+        <div class="status-panel">
+            <h3 style="color: white; margin-bottom: 20px;">
+                <span>📊</span>
+                Live Game Status
+            </h3>
+
+            <div class="status-grid">
+                <div class="status-item">
+                    <div class="status-value" id="currentPhase">-</div>
+                    <div class="status-label">Current Phase</div>
+                </div>
+
+                <div class="status-item">
+                    <div class="status-value">
+                        <span id="currentSlideStatus">-</span> / <span id="maxSlidesStatus">-</span>
+                    </div>
+                    <div class="status-label">Slide Progress</div>
+                </div>
+
+                <div class="status-item">
+                    <div class="status-value" id="timeRemainingStatus">--</div>
+                    <div class="status-label">Time Remaining</div>
+                </div>
+
+                <div class="status-item">
+                    <div class="status-value">
+                        <span id="logicalVotes">0</span> vs <span id="chaoticVotes">0</span>
+                    </div>
+                    <div class="status-label">Current Votes</div>
+                </div>
+
+                <div class="status-item">
+                    <div class="status-value" id="connectedUsers">0</div>
+                    <div class="status-label">Connected Users</div>
+                </div>
+
+                <div class="status-item">
+                    <div class="status-value" id="sessionAge">-</div>
+                    <div class="status-label">Session Duration</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Quick Actions -->
+        <div class="quick-actions">
+            <h3 style="color: white; margin-bottom: 20px;">
+                <span>⚡</span>
+                Quick Actions
+            </h3>
+
+            <div class="action-buttons">
+                <button id="copySessionBtn" class="btn btn-admin" disabled>
+                    📋 Copy Session Code
+                </button>
+
+                <button id="copyUrlBtn" class="btn btn-admin" disabled>
+                    🔗 Copy Vote URL
+                </button>
+
+                <button id="openDisplayBtn" class="btn btn-admin">
+                    📺 Open Display
+                </button>
+
+                <button id="refreshStatusBtn" class="btn btn-admin">
+                    🔄 Refresh Status
+                </button>
+
+                <button id="downloadLogBtn" class="btn btn-admin">
+                    💾 Download Logs
+                </button>
+
+                <button id="clearLogBtn" class="btn btn-admin">
+                    🗑️ Clear Logs
+                </button>
+            </div>
+        </div>
+
+        <!-- Activity Log -->
+        <div class="log-panel">
+            <h3 style="color: white; margin-bottom: 16px;">
+                <span>📝</span>
+                Activity Log
+            </h3>
+            <div id="activityLog">
+                <div class="log-entry">
+                    <span class="log-timestamp">[--:--:--]</span>
+                    Presenter control panel loaded
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/js/admin.js"></script>
+</body>
+</html>
