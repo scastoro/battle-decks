@@ -1,4 +1,4 @@
-name = "battle-decks"
+name = "battle-decks-staging"
 main = "src/index.ts"
 compatibility_date = "2025-09-23"
 
