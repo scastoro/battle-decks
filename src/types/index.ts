@@ -2,10 +2,14 @@
 export type GamePhase = 'waiting' | 'presenting' | 'voting' | 'finished';
 export type VoteChoice = 'logical' | 'chaotic';
 
+// Deck processing types
+export type DeckStatus = 'pending' | 'processing' | 'ready' | 'failed';
+
 // Cloudflare Environment bindings (will be overridden by worker-configuration.d.ts)
 export interface Env {
   GAME_SESSION: DurableObjectNamespace;
   SLIDES: R2Bucket;
+  DECKS: KVNamespace;
   AI: Ai;
   ASSETS: Fetcher;
 }
@@ -32,6 +36,7 @@ export interface GameState {
   voters: Set<string>;
   votingOpen: boolean;
   timerEnd: number;
+  timeRemaining?: number; // Optional for backwards compatibility
   slideCount: number;
   maxSlides: number;
 }
@@ -132,4 +137,73 @@ export interface ConnectionMetadata {
   userId?: string;
   joinedAt: number;
   lastActivity: number;
+}
+
+// Deck management types
+export interface DeckMetadata {
+  deckId: string;
+  name: string;
+  description?: string;
+  slideCount: number;
+  status: DeckStatus;
+  createdAt: number;
+  processedAt?: number;
+  error?: string;
+}
+
+export interface SlideEmbedding {
+  slideId: string;
+  embedding: number[];
+  metadata?: {
+    width?: number;
+    height?: number;
+    format?: string;
+  };
+}
+
+export interface ProcessingStatus {
+  deckId: string;
+  totalSlides: number;
+  processedSlides: number;
+  status: DeckStatus;
+  currentStep?: string;
+  error?: string;
+}
+
+export interface SimilarityScore {
+  slideId: string;
+  score: number;
+}
+
+export interface CreateDeckRequest {
+  name: string;
+  description?: string;
+}
+
+export interface CreateDeckResponse {
+  success: boolean;
+  deckId?: string;
+  error?: string;
+}
+
+export interface UploadSlideRequest {
+  slideId: string;
+  image: ArrayBuffer;
+  contentType: string;
+}
+
+export interface UploadSlideResponse {
+  success: boolean;
+  slideId?: string;
+  error?: string;
+}
+
+export interface ProcessDeckRequest {
+  deckId: string;
+}
+
+export interface ProcessDeckResponse {
+  success: boolean;
+  status?: ProcessingStatus;
+  error?: string;
 }

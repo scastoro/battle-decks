@@ -6,6 +6,10 @@ class AdminController {
         this.currentSession = null;
         this.sessionStartTime = null;
 
+        // Deck management state
+        this.currentDeckId = null;
+        this.availableDecks = [];
+
         // Game state
         this.gameState = {
             sessionId: null,
@@ -54,6 +58,7 @@ class AdminController {
 
     init() {
         this.setupEventListeners();
+        this.loadDecks(); // Load available decks
         this.addLogEntry('Presenter control panel loaded');
         this.updateConnectionStatus('disconnected');
         this.startSessionAgeTimer();
@@ -137,6 +142,11 @@ class AdminController {
             return;
         }
 
+        if (!this.currentDeckId) {
+            this.showGameStatus('❌ No deck selected. Please select a deck first.', 'error');
+            return;
+        }
+
         const maxSlides = parseInt(this.elements.maxSlidesInput.value) || 10;
 
         this.elements.startGameBtn.disabled = true;
@@ -149,7 +159,7 @@ class AdminController {
                     'Content-Type': 'application/json'
                 },
                 body: JSON.stringify({
-                    deckId: 'mock-deck',
+                    deckId: this.currentDeckId || 'default',
                     maxSlides: maxSlides
                 })
             });
@@ -160,7 +170,7 @@ class AdminController {
                 this.gameState = { ...this.gameState, ...result.gameState };
                 this.elements.resetGameBtn.disabled = false;
                 this.showGameStatus('✅ Game started!', 'success');
-                this.addLogEntry(`Game started with ${maxSlides} max slides`, 'info');
+                this.addLogEntry(`Game started with deck ${this.currentDeckId} (${maxSlides} max slides)`, 'info');
                 this.updateStatus();
             } else {
                 this.showGameStatus(`❌ ${result.error}`, 'error');
@@ -203,6 +213,67 @@ class AdminController {
             this.addLogEntry(`Reset game error: ${error.message}`, 'error');
         }
     }
+
+    // ==================== DECK MANAGEMENT ====================
+
+    async loadDecks() {
+        try {
+            const response = await fetch('/api/decks');
+            if (!response.ok) throw new Error('Failed to load decks');
+
+            const data = await response.json();
+            this.availableDecks = data.decks || [];
+            this.displayDecks();
+            this.addLogEntry(`Loaded ${this.availableDecks.length} deck(s)`, 'info');
+        } catch (error) {
+            this.addLogEntry(`Error loading decks: ${error.message}`, 'error');
+        }
+    }
+
+    displayDecks() {
+        const deckSelect = document.getElementById('deckSelect');
+        if (!deckSelect) return;
+
+        if (this.availableDecks.length === 0) {
+            deckSelect.innerHTML = '<option value="">No decks available</option>';
+            deckSelect.disabled = true;
+            return;
+        }
+
+        deckSelect.innerHTML = '<option value="">Select a deck...</option>' +
+            this.availableDecks
+                .filter(deck => deck.status === 'ready')
+                .map(deck => `<option value="${deck.deckId}">${deck.name} (${deck.slideCount} slides)</option>`)
+                .join('');
+
+        deckSelect.disabled = false;
+
+        // Add change event listener
+        deckSelect.addEventListener('change', (e) => {
+            this.selectDeck(e.target.value);
+        });
+    }
+
+    selectDeck(deckId) {
+        if (!deckId) {
+            this.currentDeckId = null;
+            this.addLogEntry('Deck deselected', 'info');
+            return;
+        }
+
+        this.currentDeckId = deckId;
+        const deck = this.availableDecks.find(d => d.deckId === deckId);
+        if (deck) {
+            this.addLogEntry(`Selected deck: ${deck.name} (${deck.slideCount} slides)`, 'info');
+        }
+
+        // Enable start button if session exists
+        if (this.currentSession) {
+            this.elements.startGameBtn.disabled = false;
+        }
+    }
+
+    // ==================== END DECK MANAGEMENT ====================
 
     async refreshStatus() {
         if (!this.currentSession) return;

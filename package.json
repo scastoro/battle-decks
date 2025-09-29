@@ -7,7 +7,8 @@
     "dev": "wrangler dev",
     "deploy": "wrangler deploy",
     "types": "wrangler types",
-    "tail": "wrangler tail"
+    "tail": "wrangler tail",
+    "process-deck": "tsx scripts/process-slides.ts"
   },
   "repository": {
     "type": "git",
@@ -21,6 +22,8 @@
   },
   "homepage": "https://github.com/scastoro/battle-decks#readme",
   "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
     "typescript": "^5.9.2",
     "wrangler": "^4.38.0"
   }

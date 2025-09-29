@@ -77,8 +77,11 @@ export class GameSession extends DurableObject<Env> {
   }
 
   private loadMockDataIfNeeded(): void {
+    // Only load mock data if there's no real deck data
+    // This is kept for backwards compatibility and testing
     const count = this.sql.exec('SELECT COUNT(*) as count FROM adjacency').one() as { count: number };
     if (count.count === 0) {
+      console.log('⚠️ No adjacency data found, loading mock data for testing');
       this.loadMockSlideData();
     }
   }
@@ -237,6 +240,77 @@ export class GameSession extends DurableObject<Env> {
         status: 400,
         headers: { 'Content-Type': 'application/json' }
       });
+    }
+
+    // Load deck data from KV if deckId is provided
+    if (deckId && deckId !== 'default') {
+      console.log(`📦 Loading deck data for: ${deckId}`);
+
+      try {
+        // Check if deck exists and is ready
+        const metadataJson = await this.env.DECKS.get(`deck:${deckId}:metadata`);
+        if (!metadataJson) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: `Deck not found: ${deckId}`
+          }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        const metadata = JSON.parse(metadataJson);
+        if (metadata.status !== 'ready') {
+          return new Response(JSON.stringify({
+            success: false,
+            error: `Deck is not ready. Current status: ${metadata.status}`
+          }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        // Load adjacency list from KV
+        const adjacencyJson = await this.env.DECKS.get(`deck:${deckId}:adjacency`);
+        if (!adjacencyJson) {
+          return new Response(JSON.stringify({
+            success: false,
+            error: `Deck adjacency data not found for: ${deckId}`
+          }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' }
+          });
+        }
+
+        const adjacencyData = JSON.parse(adjacencyJson) as Record<string, { logical: string[]; chaotic: string[] }>;
+
+        // Clear existing adjacency data
+        this.sql.exec('DELETE FROM adjacency');
+
+        // Load deck adjacency data into SQLite
+        for (const [slideId, neighbors] of Object.entries(adjacencyData)) {
+          this.sql.exec(
+            'INSERT INTO adjacency (slide_id, logical_slides, chaotic_slides) VALUES (?, ?, ?)',
+            slideId,
+            JSON.stringify(neighbors.logical),
+            JSON.stringify(neighbors.chaotic)
+          );
+        }
+
+        console.log(`✅ Loaded ${Object.keys(adjacencyData).length} slides from deck ${deckId}`);
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+        console.error(`❌ Error loading deck ${deckId}:`, errorMessage);
+        return new Response(JSON.stringify({
+          success: false,
+          error: `Failed to load deck: ${errorMessage}`
+        }), {
+          status: 500,
+          headers: { 'Content-Type': 'application/json' }
+        });
+      }
+    } else {
+      console.log('⚠️ Using default/mock deck data');
     }
 
     this.gameState.phase = 'presenting';
